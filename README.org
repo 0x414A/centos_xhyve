@@ -1,0 +1,177 @@
+* vagrant-xhyve 
+** installation
+
+#+BEGIN_SRC shell
+xcode-select --install # needed to install nokogiri successfully
+brew install ruby
+gem install bundler -v 1.10.6
+bundle install
+rake compile
+#+END_SRC
+
+** building a box: centos
+*** Set up the necessary files:
+
+#+BEGIN_SRC shell
+mkdir centos
+dd if=/dev/zero bs=2k count=1 of=/tmp/tmp.iso
+dd if=CentOS-7-x86_64-Minimal-1511.iso bs=2k skip=1 >> /tmp/tmp.iso 
+hdiutil attach /tmp/tmp.iso
+cp /Volumes/CentOS\ 7\ x86_64/isolinux/vmlinuz centos/
+cp /Volumes/CentOS\ 7\ x86_64/isolinux/initrd.img centos/
+diskutil unmount /Volumes/CentOS\ 7\ x86_64/
+rm /tmp/tmp.iso
+dd if=/dev/zero of=centos/hdd.img bs=1g count=6
+#+END_SRC
+
+*** Install CentOS:
+
+Create a file, ~up.sh~:
+
+#+BEGIN_SRC sh
+#!/bin/sh
+
+KERNEL="centos/vmlinuz"
+INITRD="centos/initrd.img"
+CMDLINE="earlyprintk=serial console=ttyS0 acpi=off sshd=1 vnc vncpassword=yourpasswd"
+
+MEM="-m 1G"
+#SMP="-c 2"
+NET="-s 2:0,virtio-net"
+IMG_CD="-s 3,ahci-cd,CentOS-7-x86_64-Minimal-1511.iso"
+IMG_HDD="-s 4,virtio-blk,centos/hdd.img"
+PCI_DEV="-s 0:0,hostbridge -s 31,lpc"
+LPC_DEV="-l com1,stdio"
+
+xhyve $MEM $SMP $PCI_DEV $LPC_DEV $NET $IMG_CD $IMG_HDD -f kexec,$KERNEL,$INITRD,"$CMDLINE"
+#+END_SRC
+
+Then run it:
+
+#+BEGIN_SRC sh
+chmod +x up.sh
+sudo ./up.sh
+#+END_SRC
+
+~sudo~ is necessary because you need it to run ~xhyve~.
+
+This will start up the VM with the ISO mounted as a live distro.
+
+You'll reach something like this:
+
+#+BEGIN_SRC plain
+Starting installer, one moment...
+anaconda 21.48.22.56-1 for CentOS 7 started.
+ * installation log files are stored in /tmp during the installation
+ * shell is available on TTY2
+ * when reporting a bug add logs from /tmp as separate text/plain attachments
+21:03:15 Starting VNC...
+================================================================================
+================================================================================
+VNC Password
+
+VNC password must be six to eight characters long.
+Please enter a new one, or leave blank for no password.
+Password:
+Password (confirm):
+21:03:30 The VNC server is now running.
+21:03:30
+
+You chose to execute vnc with a password.
+
+
+21:03:30 Please manually connect your vnc client to 192.168.64.3:1 to begin the install.
+21:03:30 Attempting to start vncconfig
+#+END_SRC
+
+Use a VNC client like RealVNC Viewer, Screens, Chicken of the VNC to connect to the VNC server (whatever IP is in the output, e.g. 192.168.64.3). *NOTE* you need to use port ~5901~. 
+
+https://asciinema.org/a/7eb38y4esca0payl0l31g6rvx
+https://asciinema.org/a/1514hw2hp5lnsbhv0rrfjtnj9
+
+For this part, you first need to enable *Remote Login* in *System Preferences* -> *Sharing* so as to start an SSH server on *OSX*. This is necessary so you can copy the needed files from the VM back to the host.
+
+#+BEGIN_SRC plain 
+λ aj [~MY_GITHUB/centos_xhyve] at  master
+→ ssh root@192.168.64.3
+[anaconda root@localhost ~]# mkdir /mnt
+mkdir: cannot create directory '/mnt': File exists
+[anaconda root@localhost ~]# lvm_scan
+-bash: lvm_scan: command not found
+[anaconda root@localhost ~]# mount /dev/
+Display all 151 possibilities? (y or n)
+[anaconda root@localhost ~]# mount /dev/centos/root /mnt
+[anaconda root@localhost ~]# mount -o bind /dev/ /mnt/dev
+[anaconda root@localhost ~]# mount -o bind /proc/ /mnt/proc
+[anaconda root@localhost ~]# chroot /mnt
+[anaconda root@localhost /]# mount /dev/vda1 /boot
+[anaconda root@localhost /]# ifup eth0
+ERROR    : [/etc/sysconfig/network-scripts/ifup-eth] Device eth0 does not seem to be present, delaying initialization.
+[anaconda root@localhost /]# scp /boot/vmlinuz-3.10.0-327.el7.x86_64 aj@192.168.64.1:centos
+ssh: connect to host 192.168.64.1 port 22: Connection refused
+lost connection
+[anaconda root@localhost /]# scp /boot/vmlinuz-3.10.0-327.el7.x86_64 aj@192.168.64.1:centos
+ssh: connect to host 192.168.64.1 port 22: Connection refused
+lost connection
+[anaconda root@localhost /]# exit
+[anaconda root@localhost ~]# logout
+Connection to 192.168.64.3 closed.
+  [anaconda root@localhost ~]# ls /mnt
+bin   dev  home  lib64	mnt  proc  run	 srv  tmp  var
+boot  etc  lib	 media	opt  root  sbin  sys  usr
+[anaconda root@localhost ~]# chroot /mnt
+[anaconda root@localhost /]# mount /dev/vda1 /boot
+mount: /dev/vda1 is already mounted or /boot busy
+       /dev/vda1 is already mounted on /boot
+[anaconda root@localhost /]# ifconfig
+bash: ifconfig: command not found
+[anaconda root@localhost /]# ip link
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT qlen 1000
+    link/ether 6e:fe:25:34:cf:32 brd ff:ff:ff:ff:ff:ff
+[anaconda root@localhost /]# ifup eth0
+ERROR    : [/etc/sysconfig/network-scripts/ifup-eth] Device eth0 does not seem to be present, delaying initialization.
+[anaconda root@localhost /]# scp /boot/vmlinuz-
+vmlinuz-0-rescue-905d1d8ce6ac49e8b46012f8eb7dfd2d
+vmlinuz-3.10.0-327.el7.x86_64
+[anaconda root@localhost /]# scp /boot/vmlinuz-3.10.0-327.el7.x86_64 aj@192.168.64.1:centos
+The authenticity of host '192.168.64.1 (192.168.64.1)' can't be established.
+ECDSA key fingerprint is df:9e:d8:b2:0d:85:04:08:26:4d:0a:0d:b2:b5:b3:c0.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '192.168.64.1' (ECDSA) to the list of known hosts.
+Password:
+vmlinuz-3.10.0-327.el7.x86_64                            100% 5036KB   4.9MB/s   00:00
+[anaconda root@localhost /]# scp /boot/initramfs-3.10.0-327.el7.x86_64.img aj@192.168.64.1:centos
+Password:
+initramfs-3.10.0-327.el7.x86_64.img                      100%   18MB  17.9MB/s   00:00
+[anaconda root@localhost /]# umount /boot
+[anaconda root@localhost /]# exit
+exit
+[anaconda root@localhost ~]# umount /mnt/dev
+[anaconda root@localhost ~]# umount /mnt/proc
+[anaconda root@localhost ~]# umount /mnt
+[anaconda root@localhost ~]# halt
+Connection to 192.168.64.3 closed by remote host.
+Connection to 192.168.64.3 closed.
+#+END_SRC
+
+*** Boot into the VM for the first time. 
+
+Create a new vm ~run.sh~.
+
+#+BEGIN_SRC sh
+#!/bin/sh
+KERNEL="centos/vmlinuz-3.10.0-327.10.1.el7.x86_64"
+INITRD="centos/initramfs-3.10.0-327.10.1.el7.x86_64.img"
+CMDLINE="earlyprintk=serial console=ttyS0 acpi=off root=/dev/centos/root ro"
+MEM="-m 1G"
+NET="-s 2:0,virtio-net"
+IMG_HDD="-s 4,virtio-blk,centos/hdd.img"
+PCI_DEV="-s 0:0,hostbridge -s 31,lpc"
+LPC_DEV="-l com1,stdio"
+xhyve $MEM $PCI_DEV $LPC_DEV $NET $IMG_CD $IMG_HDD -f kexec,$KERNEL,$INITRD,"$CMDLINE
+#+END_SRC
+
+
+

@@ -8,7 +8,7 @@ MEM="-m 1G"
 #SMP="-c 2"
 NET="-s 2:0,virtio-net"
 IMG_CD="-s 3,ahci-cd,CentOS-7-x86_64-Minimal-1511.iso"
-IMG_HDD="-s 4,virtio-blk,hdd.img"
+IMG_HDD="-s 4,virtio-blk,centos/hdd.img"
 PCI_DEV="-s 0:0,hostbridge -s 31,lpc"
 LPC_DEV="-l com1,stdio"
 
